@@ -117,13 +117,13 @@ As $k$ increases, more information is retained and reconstruction usually improv
 For component $i$:
 
 $$
-\operatorname{EVR}_i = \frac{\lambda_i}{\sum_{j=1}^{p} \lambda_j}
+\mathrm{EVR}_i = \frac{\lambda_i}{\sum_{j=1}^{p} \lambda_j}
 $$
 
 Cumulative explained variance:
 
 $$
-\operatorname{CEV}_k = \sum_{i=1}^{k} \operatorname{EVR}_i
+\mathrm{CEV}_k = \sum_{i=1}^{k} \mathrm{EVR}_i
 $$
 
 For example, if the first five components explain 96% of the variance, the data can be represented using five dimensions while retaining 96% of the variance captured by the original representation.
@@ -137,13 +137,13 @@ The application automatically finds the smallest $k$ that reaches a selected var
 The project measures information lost during reconstruction.
 
 $$
-\operatorname{MSE} = \frac{1}{N}\sum_{i=1}^{N} (x_i - \widehat{x}_i)^2
+\mathrm{MSE} = \frac{1}{N}\sum_{i=1}^{N} (x_i - \widehat{x}_i)^2
 $$
 
 and
 
 $$
-\operatorname{RMSE} = \sqrt{\operatorname{MSE}}
+\mathrm{RMSE} = \sqrt{\mathrm{MSE}}
 $$
 
 Lower reconstruction error generally means that the reduced representation preserves the original data more accurately.
