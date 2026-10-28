@@ -202,6 +202,140 @@ def marchenko_pastur_analysis(X, eigenvalues):
 
 
 # ==========================================
+# DATA SANITIZER & HYGIENE LABORATORY
+# ==========================================
+
+def render_data_sanitizer_lab():
+    st.header("🧹 Data Hygiene & ML-Ready Sanitizer Lab")
+    st.markdown(
+        "Upload a raw, 'infected' dataset containing common real-world data flaws "
+        "(missing values, infinite values, mixed types, extreme outliers, or unscaled ranges). "
+        "Diagnose defects and export a mathematically sanitized, ML-ready dataset."
+    )
+
+    uploaded_raw = st.file_uploader("Upload Raw / Infected CSV Dataset", type=["csv"], key="sanitizer_uploader")
+
+    if uploaded_raw:
+        raw_df = pd.read_csv(uploaded_raw)
+        
+        st.subheader("🔍 Automated Data Defect Audit")
+        
+        total_cells = raw_df.size
+        missing_count = int(raw_df.isna().sum().sum())
+        inf_count = int(np.isinf(raw_df.select_dtypes(include=np.number)).sum().sum())
+        duplicate_count = int(raw_df.duplicated().sum())
+        
+        col_types = raw_df.dtypes.astype(str)
+        non_numeric_cols = [col for col, dtype in col_types.items() if dtype not in ['int64', 'float64', 'int32', 'float32']]
+
+        d1, d2, d3, d4 = st.columns(4)
+        d1.metric("Missing Cells (NaN)", f"{missing_count}", delta=f"{missing_count/max(total_cells,1):.1%} of data", delta_color="inverse")
+        d2.metric("Infinite Values (Inf)", f"{inf_count}", delta="Critical Error" if inf_count > 0 else "Clean", delta_color="inverse")
+        d3.metric("Duplicate Rows", f"{duplicate_count}", delta="Redundant" if duplicate_count > 0 else "Unique", delta_color="inverse")
+        d4.metric("Non-Numeric Columns", f"{len(non_numeric_cols)}", delta="Requires Encoding" if len(non_numeric_cols) > 0 else "Pure Numeric", delta_color="off")
+
+        with st.expander("📋 View Raw Data Head & Column Types"):
+            st.dataframe(raw_df.head(10), use_container_width=True)
+            st.write(pd.DataFrame({"Data Type": col_types, "Missing Values": raw_df.isna().sum()}))
+
+        st.divider()
+
+        st.subheader("⚙️ Sanitization Pipeline Configuration")
+        
+        c_opt1, c_opt2 = st.columns(2)
+        with c_opt1:
+            impute_strategy = st.selectbox(
+                "Missing Value Strategy",
+                ["Median (Robust to Outliers)", "Mean (Parametric)", "Drop Rows with Missing Values", "Constant Fill (0.0)"]
+            )
+            handle_inf = st.checkbox("Sanitize Infinite Values (`±inf` → `NaN` → Imputed)", value=True)
+            drop_dups = st.checkbox("Remove Duplicate Rows", value=True)
+
+        with c_opt2:
+            outlier_handling = st.selectbox(
+                "Extreme Outlier Handling",
+                ["None (Keep All)", "Clip Outliers (Winsorize at 1st / 99th Percentile)", "Drop Rows with Z-score > 3.5"]
+            )
+            scale_method = st.selectbox(
+                "Feature Scaling Method for ML",
+                ["Standard Scaler (Zero Mean, Unit Variance)", "MinMax Scaler (Range [0, 1])", "None (Raw Values)"]
+            )
+
+        if st.button("🚀 Run Sanitization & Generate ML-Ready Dataset", type="primary"):
+            cleaned = raw_df.copy()
+
+            if drop_dups:
+                cleaned = cleaned.drop_duplicates()
+
+            if handle_inf:
+                num_cols_sel = cleaned.select_dtypes(include=np.number).columns
+                cleaned[num_cols_sel] = cleaned[num_cols_sel].replace([np.inf, -np.inf], np.nan)
+
+            for col in cleaned.columns:
+                if cleaned[col].dtype == object or cleaned[col].dtype.name == 'category':
+                    cleaned[col] = cleaned[col].astype(str).factorize()[0]
+
+            num_cols = cleaned.select_dtypes(include=np.number).columns
+            for col in num_cols:
+                if cleaned[col].isna().any():
+                    if "Median" in impute_strategy:
+                        fill_val = cleaned[col].median()
+                    elif "Mean" in impute_strategy:
+                        fill_val = cleaned[col].mean()
+                    elif "Constant" in impute_strategy:
+                        fill_val = 0.0
+                    cleaned[col] = cleaned[col].fillna(0.0 if np.isnan(fill_val) else fill_val)
+
+            if "Drop Rows" in impute_strategy:
+                cleaned = cleaned.dropna()
+
+            if "Clip" in outlier_handling:
+                for col in num_cols:
+                    p1, p99 = np.percentile(cleaned[col].dropna(), [1, 99])
+                    cleaned[col] = np.clip(cleaned[col], p1, p99)
+            elif "Drop" in outlier_handling:
+                for col in num_cols:
+                    mean_val = cleaned[col].mean()
+                    std_val = cleaned[col].std()
+                    if std_val > 0:
+                        z_scores = np.abs((cleaned[col] - mean_val) / std_val)
+                        cleaned = cleaned[cleaned[col].isna() | (z_scores <= 3.5)]
+
+            X_clean_mat = cleaned.select_dtypes(include=np.number).to_numpy(dtype=float)
+            X_clean_mat = np.nan_to_num(X_clean_mat, nan=0.0, posinf=0.0, neginf=0.0)
+
+            if "Standard" in scale_method:
+                mean_v = X_clean_mat.mean(axis=0)
+                std_v = X_clean_mat.std(axis=0, ddof=0)
+                std_v[(std_v == 0) | np.isnan(std_v)] = 1.0
+                X_clean_mat = (X_clean_mat - mean_v) / std_v
+            elif "MinMax" in scale_method:
+                min_v = X_clean_mat.min(axis=0)
+                max_v = X_clean_mat.max(axis=0)
+                ptp_v = max_v - min_v
+                ptp_v[ptp_v == 0] = 1.0
+                X_clean_mat = (X_clean_mat - min_v) / ptp_v
+
+            final_clean_df = pd.DataFrame(X_clean_mat, columns=cleaned.select_dtypes(include=np.number).columns)
+
+            st.success("✨ Data Sanitization Complete! Your dataset is 100% finite, imputed, scaled, and ready for ML ingestion.")
+
+            rc1, rc2 = st.columns(2)
+            rc1.metric("Original Dataset Shape", f"{raw_df.shape[0]} rows × {raw_df.shape[1]} cols")
+            rc2.metric("Sanitized ML-Ready Shape", f"{final_clean_df.shape[0]} rows × {final_clean_df.shape[1]} cols", delta=f"-{raw_df.shape[0]-final_clean_df.shape[0]} rows dropped")
+
+            st.subheader("✨ Sanitized Data Preview (First 10 Rows)")
+            st.dataframe(final_clean_df.head(10), use_container_width=True)
+
+            st.download_button(
+                "📥 Download ML-Ready Sanitized Dataset (.csv)",
+                final_clean_df.to_csv(index=False),
+                "ml_ready_sanitized_dataset.csv",
+                "text/csv"
+            )
+
+
+# ==========================================
 # STREAMLIT PAGE SETUP
 # ==========================================
 
@@ -210,12 +344,17 @@ st.set_page_config(page_title="LatentLabs | Advanced PCA Workbench", page_icon="
 st.title("🧪 LatentLabs: Advanced PCA & Subspace Analytics Workbench")
 st.caption(
     "First-principles Principal Component Analysis, Random Matrix Noise Filtering, Biplot Cluster Discovery, "
-    "Subspace Anomaly Detection, Composite Index Scoring, and Multi-Channel Image Compression."
+    "Subspace Anomaly Detection, Composite Index Scoring, Data Hygiene Sanitization, and Multi-Channel Image Compression."
 )
 
 with st.sidebar:
     st.header("Control Panel")
-    mode = st.radio("Choose a laboratory", ["CSV / Subspace Analytics", "Image Compression Lab", "PCA Mathematical Theory"])
+    mode = st.radio("Choose a laboratory", [
+        "CSV / Subspace Analytics", 
+        "Data Sanitizer & Hygiene", 
+        "Image Compression Lab", 
+        "PCA Mathematical Theory"
+    ])
     method = st.selectbox("PCA Engine Implementation", ["Eigenvalue PCA", "SVD PCA"])
     st.divider()
     st.info(
@@ -224,7 +363,7 @@ with st.sidebar:
     )
 
 # ==========================================
-# MODE 1: COMPREHENSIVE PCA MATHEMATICAL THEORY
+# MAIN ROUTING FLOW
 # ==========================================
 if mode == "PCA Mathematical Theory":
     st.header("📚 Principal Component Analysis: Complete Theoretical Foundation")
@@ -263,7 +402,7 @@ if mode == "PCA Mathematical Theory":
             standard scree plots often fail to distinguish true signal from sampling noise. 
             According to the **Marchenko–Pastur Law**, eigenvalues of pure random Gaussian noise matrices are bounded above by:
             $$\\lambda_+ = \\sigma^2 \\left(1 + \\sqrt{\\gamma}\\right)^2$$
-            Any principal component whose eigenvalue exceeds $\\lambda_+ \text{ (the RMT noise floor)}$ represents genuine structural correlation, 
+            Any principal component whose eigenvalue exceeds $\\lambda_+$ represents genuine structural correlation, 
             while components below $\\lambda_+$ are statistically indistinguishable from random noise.
 
             ---
@@ -278,9 +417,9 @@ if mode == "PCA Mathematical Theory":
             """
         )
 
-# ==========================================
-# MODE 2: IMAGE LAB (WITH RGB & ERROR HEATMAP)
-# ==========================================
+elif mode == "Data Sanitizer & Hygiene":
+    render_data_sanitizer_lab()
+
 elif mode == "Image Compression Lab":
     st.header("🖼️ Multi-Channel Image Compression & Subspace Reconstruction Lab")
     uploaded = st.file_uploader("Upload a JPG, JPEG or PNG image", type=["jpg", "jpeg", "png"])
@@ -387,9 +526,6 @@ elif mode == "Image Compression Lab":
             }), use_container_width=True)
             st.write(f"Computation Execution Time: **{elapsed:.4f} seconds**")
 
-# ==========================================
-# MODE 3: CSV / SUBSPACE ANALYTICS WORKBENCH
-# ==========================================
 else:
     st.header("📊 CSV / Subspace Analytics Workbench")
     uploaded = st.file_uploader("Upload a tabular CSV dataset", type=["csv"])
