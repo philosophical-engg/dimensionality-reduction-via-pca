@@ -37,31 +37,31 @@ The original variables are therefore replaced by a smaller number of mathematica
 
 Let the data matrix be
 
-\[
-X \in \mathbb{R}^{n\times p}
-\]
+$$
+X \in \mathbb{R}^{n \times p}
+$$
 
-where \(n\) is the number of observations and \(p\) is the number of features.
+where $n$ is the number of observations and $p$ is the number of features. Let $\boldsymbol{\mu} \in \mathbb{R}^{p}$ be the column vector of feature means, and let $\mathbf{1}_n \in \mathbb{R}^{n}$ be the all-ones vector.
 
 ### Mean centering
 
-For each feature \(j\):
+For each feature $j$:
 
-\[
-\mu_j = \frac{1}{n}\sum_{i=1}^{n}X_{ij}
-\]
+$$
+\mu_j = \frac{1}{n}\sum_{i=1}^{n} X_{ij}
+$$
 
-The centered matrix is:
+The centered matrix is obtained by subtracting each feature mean from every observation:
 
-\[
-X_c = X-\mu
-\]
+$$
+X_c = X - \mathbf{1}_n \boldsymbol{\mu}^{\mathsf T}.
+$$
 
 ### Covariance matrix
 
-\[
-C = \frac{1}{n-1}X_c^T X_c
-\]
+$$
+C = \frac{1}{n-1} X_c^{\mathsf T} X_c
+$$
 
 The covariance matrix tells us how features vary together.
 
@@ -69,66 +69,66 @@ The covariance matrix tells us how features vary together.
 
 We solve:
 
-\[
-Cv_i=\lambda_i v_i
-\]
+$$
+C \mathbf{v}_i = \lambda_i \mathbf{v}_i
+$$
 
 where:
 
-- \(v_i\) is an eigenvector and becomes a principal direction.
-- \(\lambda_i\) is its eigenvalue and measures the variance represented by that direction.
+- $v_i$ is an eigenvector and becomes a principal direction.
+- $\lambda_i$ is its eigenvalue and measures the variance represented by that direction.
 
 The eigenvalues are ordered:
 
-\[
-\lambda_1\geq\lambda_2\geq\cdots\geq\lambda_p
-\]
+$$
+\lambda_1 \geq \lambda_2 \geq \cdots \geq \lambda_p
+$$
 
 ### Projection
 
-Keep the first \(k\) principal directions:
+Keep the first $k$ principal directions:
 
-\[
-V_k=[v_1,v_2,\ldots,v_k]
-\]
+$$
+V_k = \begin{bmatrix} \mathbf{v}_1 & \mathbf{v}_2 & \cdots & \mathbf{v}_k \end{bmatrix}
+$$
 
 Then project:
 
-\[
-Z=X_cV_k
-\]
+$$
+Z = X_c V_k
+$$
 
-The matrix \(Z\) is the lower-dimensional representation.
+The matrix $Z$ is the lower-dimensional representation.
 
 ### Reconstruction
 
 An approximation of the original data is:
 
-\[
-\hat X=ZV_k^T+\mu
-\]
+$$
+\widehat{X} = Z V_k^{\mathsf T} + \mathbf{1}_n \boldsymbol{\mu}^{\mathsf T}
+$$
 
-As \(k\) increases, more information is retained and reconstruction usually improves.
+As $k$ increases, more information is retained and reconstruction usually improves.
 
 ---
 
 ## 3. Explained variance
 
-For component \(i\):
+For component $i$:
 
-\[
-EVR_i=\frac{\lambda_i}{\sum_j\lambda_j}
-\]
+$$
+\operatorname{EVR}_i = \frac{\lambda_i}{\sum_{j=1}^{p} \lambda_j}
+$$
 
 Cumulative explained variance:
 
-\[
-CEV_k=\sum_{i=1}^{k}EVR_i
-\]
+$$
+\operatorname{CEV}_k = \sum_{i=1}^{k} \operatorname{EVR}_i
+$$
 
 For example, if the first five components explain 96% of the variance, the data can be represented using five dimensions while retaining 96% of the variance captured by the original representation.
 
-The application automatically finds the smallest \(k\) that reaches a selected variance threshold such as 90%, 95% or 99%.
+The application automatically finds the smallest $k$ that reaches a selected variance threshold such as 90%, 95% or 99%.
 
 ---
 
@@ -136,15 +136,15 @@ The application automatically finds the smallest \(k\) that reaches a selected v
 
 The project measures information lost during reconstruction.
 
-\[
-MSE=\frac{1}{N}\sum_i(x_i-\hat{x}_i)^2
-\]
+$$
+\operatorname{MSE} = \frac{1}{N}\sum_{i=1}^{N} (x_i - \widehat{x}_i)^2
+$$
 
 and
 
-\[
-RMSE=\sqrt{MSE}
-\]
+$$
+\operatorname{RMSE} = \sqrt{\operatorname{MSE}}
+$$
 
 Lower reconstruction error generally means that the reduced representation preserves the original data more accurately.
 
@@ -157,7 +157,7 @@ The project contains two implementations.
 ### Covariance/eigenvalue approach
 
 1. Center the matrix.
-2. Compute \(C=X_c^TX_c/(n-1)\).
+2. Compute $C = \frac{X_c^{\mathsf T} X_c}{n-1}$.
 3. Calculate eigenvalues and eigenvectors.
 4. Sort them.
 5. Select the leading components.
@@ -166,17 +166,17 @@ The project contains two implementations.
 
 The centered matrix is decomposed as:
 
-\[
-X_c=U\Sigma V^T
-\]
+$$
+X_c = U \Sigma V^{\mathsf T}
+$$
 
-The rows of \(V^T\) provide the principal directions.
+The rows of $V^T$ provide the principal directions.
 
 The explained variances are obtained from the singular values:
 
-\[
-\lambda_i=\frac{\sigma_i^2}{n-1}
-\]
+$$
+\lambda_i = \frac{\sigma_i^2}{n-1}
+$$
 
 The two implementations should produce the same principal variances up to numerical precision.
 
@@ -188,15 +188,15 @@ For an image, each row can be treated as an observation and each column as a fea
 
 PCA finds directions describing major spatial patterns in the image.
 
-Keeping only \(k\) components gives:
+Keeping only $k$ components gives:
 
-\[
-\hat X = X_cV_kV_k^T+\mu
-\]
+$$
+\widehat{X} = X_c V_k V_k^{\mathsf T} + \mathbf{1}_n \boldsymbol{\mu}^{\mathsf T}
+$$
 
-Small \(k\) produces stronger compression but more visible reconstruction loss.
+Small $k$ produces stronger compression but more visible reconstruction loss.
 
-Large \(k\) produces a reconstruction closer to the original.
+Large $k$ produces a reconstruction closer to the original.
 
 This creates a useful experimental trade-off:
 
@@ -220,9 +220,9 @@ The CSV laboratory:
 
 Standardization transforms a feature using:
 
-\[
-z=\frac{x-\mu}{\sigma}
-\]
+$$
+z = \frac{x-\mu}{\sigma}
+$$
 
 This is important because PCA is sensitive to feature scale.
 
