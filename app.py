@@ -397,6 +397,7 @@ else:
                     st.pyplot(scatter_plot(Z_2d[:, 0], Z_2d[:, 1], "PC1", "PC2"))
 
         # TAB 3: Subspace Anomaly Radar
+       # TAB 3: Subspace Anomaly Radar
         with tab_anomaly:
             st.subheader("🚨 Unsupervised Subspace Anomaly Detection")
             st.markdown(
@@ -405,13 +406,19 @@ else:
                 "high reconstruction error $\\|x_i - \\hat{x}_i\\|^2$."
             )
 
-            sq_residuals = (X - X_hat) ** 2
+            # Take real part (in case Eigen PCA produced 0j complex numbers) and sanitize NaNs/Infs
+            X_hat_clean = np.nan_to_num(np.real(X_hat), nan=0.0, posinf=0.0, neginf=0.0)
+            X_clean = np.nan_to_num(np.real(X), nan=0.0, posinf=0.0, neginf=0.0)
+
+            sq_residuals = (X_clean - X_hat_clean) ** 2
             row_mse = np.mean(sq_residuals, axis=1)
+            row_mse = np.nan_to_num(row_mse, nan=0.0, posinf=0.0, neginf=0.0)
+
             worst_feature_idx = np.argmax(sq_residuals, axis=1)
             worst_feature_names = [feature_names[idx] for idx in worst_feature_idx]
 
             pct_cutoff = st.slider("Anomaly Alert Percentile Threshold (%)", 90.0, 99.5, 95.0, 0.5)
-            cutoff_val = np.percentile(row_mse, pct_cutoff)
+            cutoff_val = float(np.percentile(row_mse, pct_cutoff))
             is_anomaly = row_mse >= cutoff_val
             n_anomalies = int(np.sum(is_anomaly))
 
@@ -420,9 +427,13 @@ else:
             a2.metric("Error Threshold (MSE)", f"{cutoff_val:.4f}")
             a3.metric("Max Row Error", f"{np.max(row_mse):.4f}")
 
-            # Plot anomaly score distribution
+            # Plot anomaly score distribution safely
             fig_anom, ax_anom = plt.subplots(figsize=(7, 3.2))
-            ax_anom.hist(row_mse, bins=35, color="#4C78A8", edgecolor="white", alpha=0.85)
+            finite_mse = row_mse[np.isfinite(row_mse)]
+            if len(finite_mse) > 0 and np.max(finite_mse) > np.min(finite_mse):
+                ax_anom.hist(finite_mse, bins=35, color="#4C78A8", edgecolor="white", alpha=0.85)
+            else:
+                ax_anom.hist(finite_mse, bins=1, color="#4C78A8", edgecolor="white", alpha=0.85)
             ax_anom.axvline(cutoff_val, color="#E45756", linestyle="--", linewidth=2, label=f"{pct_cutoff}% Cutoff")
             ax_anom.set_xlabel("Row Reconstruction Error (MSE)")
             ax_anom.set_ylabel("Record Count")
@@ -452,7 +463,7 @@ else:
             target_col = st.selectbox("Select Target Column (y) to Predict", df.columns)
 
             # Exclude target column from input features X if target is numeric so there is no data leakage
-            other_numeric_cols = [c for c in numeric.columns if c != target_col]
+            other_numeric_cols = [c for c in feature_names if c != target_col]
 
             if len(other_numeric_cols) < 2:
                 st.warning("Need at least 2 numeric predictor columns (excluding the target) to run the ML benchmark.")
