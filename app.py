@@ -551,7 +551,7 @@ with st.sidebar:
     st.header("Control Panel")
     mode = st.radio("Choose a laboratory", [
         "CSV / Subspace Analytics", 
-        "Data Sanitizer & Hygiene", 
+        "Data Preprocessing Pipeline", 
         "Image Compression Lab", 
         "PCA Mathematical Theory"
     ])
@@ -617,8 +617,10 @@ if mode == "PCA Mathematical Theory":
             """
         )
 
-elif mode == "Data Sanitizer & Hygiene":
-    render_data_sanitizer_lab()
+#elif mode == "Data Sanitizer & Hygiene":
+#    render_data_sanitizer_lab()
+elif mode == "Data Preprocessing Pipeline":
+    render_data_preprocessing_pipeline()
 
 elif mode == "Image Compression Lab":
     st.header("🖼️ Multi-Channel Image Compression & Subspace Reconstruction Lab")
