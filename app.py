@@ -204,77 +204,162 @@ def marchenko_pastur_analysis(X, eigenvalues):
 # ==========================================
 # DATA SANITIZER & HYGIENE LABORATORY
 # ==========================================
+# ==========================================
+# INDUSTRIAL-GRADE DATA HYGIENE & SANITIZER LAB
+# ==========================================
+
+import re
+
+def sanitize_raw_web_series(s: pd.Series) -> pd.Series:
+    """Detects dirty currency, percentages, commas, and web placeholders in object columns."""
+    if s.dtype != object and s.dtype.name != 'category':
+        return s
+    
+    # 1. Standardize web null placeholders
+    web_nulls = {"nan", "null", "none", "n/a", "na", "-", "--", "?", "missing", "nil", "inf", "-inf", ""}
+    cleaned_s = s.astype(str).str.strip()
+    cleaned_s = cleaned_s.apply(lambda x: np.nan if x.lower() in web_nulls else x)
+    
+    # 2. Check if column is numeric disguised as string ($1,234.50 or 85.5%)
+    sample = cleaned_s.dropna().astype(str).head(100)
+    if len(sample) > 0:
+        # Strip currency symbols, commas, percent signs
+        numeric_test = sample.str.replace(r"[\$,€,£,₹,%, ]", "", regex=True)
+        converted = pd.to_numeric(numeric_test, errors="coerce")
+        # If at least 75% of non-null samples parse cleanly as numbers, cast the whole column
+        if converted.notna().sum() / len(sample) >= 0.75:
+            full_converted = cleaned_s.str.replace(r"[\$,€,£,₹,%, ]", "", regex=True)
+            return pd.to_numeric(full_converted, errors="coerce")
+            
+    return cleaned_s
+
 
 def render_data_sanitizer_lab():
-    st.header("🧹 Data Hygiene & ML-Ready Sanitizer Lab")
+    st.header("🧹 Data Hygiene & ML-Ready Sanitizer Lab (Universal Web Parser)")
     st.markdown(
-        "Upload a raw, 'infected' dataset containing common real-world data flaws "
-        "(missing values, infinite values, mixed types, extreme outliers, or unscaled ranges). "
-        "Diagnose defects and export a mathematically sanitized, ML-ready dataset."
+        "Upload raw, messy, or infected datasets directly from Kaggle, government portals, or wild web scrapes. "
+        "Diagnose hidden defects, normalize noisy text, parse disguised currency/percentages, and export a clean, ML-ready matrix."
     )
 
-    uploaded_raw = st.file_uploader("Upload Raw / Infected CSV Dataset", type=["csv"], key="sanitizer_uploader")
+    uploaded_raw = st.file_uploader("Upload Raw Tabular Dataset (CSV)", type=["csv"], key="sanitizer_uploader")
 
     if uploaded_raw:
-        raw_df = pd.read_csv(uploaded_raw)
-        
+        # Read raw with flexible encoding
+        try:
+            raw_df = pd.read_csv(uploaded_raw)
+        except UnicodeDecodeError:
+            uploaded_raw.seek(0)
+            raw_df = pd.read_csv(uploaded_raw, encoding="latin1")
+
+        # Initial Web Noise Sanitization Pass
+        clean_pass_df = raw_df.copy()
+        for col in clean_pass_df.columns:
+            clean_pass_df[col] = sanitize_raw_web_series(clean_pass_df[col])
+
+        # --- DIAGNOSTIC DEFECT AUDIT ---
         st.subheader("🔍 Automated Data Defect Audit")
         
-        total_cells = raw_df.size
-        missing_count = int(raw_df.isna().sum().sum())
-        inf_count = int(np.isinf(raw_df.select_dtypes(include=np.number)).sum().sum())
-        duplicate_count = int(raw_df.duplicated().sum())
+        total_cells = clean_pass_df.size
+        missing_count = int(clean_pass_df.isna().sum().sum())
+        num_cols = clean_pass_df.select_dtypes(include=np.number).columns
+        inf_count = int(np.isinf(clean_pass_df[num_cols]).sum().sum()) if len(num_cols) > 0 else 0
+        duplicate_count = int(clean_pass_df.duplicated().sum())
         
-        col_types = raw_df.dtypes.astype(str)
-        non_numeric_cols = [col for col, dtype in col_types.items() if dtype not in ['int64', 'float64', 'int32', 'float32']]
+        # Zero-variance (constant) columns check
+        constant_cols = [c for c in clean_pass_df.columns if clean_pass_df[c].nunique(dropna=False) <= 1]
+        
+        # High-cardinality categorical check (IDs, names, hashes)
+        high_card_cols = [
+            c for c in clean_pass_df.select_dtypes(exclude=np.number).columns 
+            if clean_pass_df[c].nunique() / max(len(clean_pass_df), 1) > 0.85
+        ]
 
         d1, d2, d3, d4 = st.columns(4)
-        d1.metric("Missing Cells (NaN)", f"{missing_count}", delta=f"{missing_count/max(total_cells,1):.1%} of data", delta_color="inverse")
-        d2.metric("Infinite Values (Inf)", f"{inf_count}", delta="Critical Error" if inf_count > 0 else "Clean", delta_color="inverse")
+        d1.metric("Missing Values (NaN)", f"{missing_count}", delta=f"{missing_count/max(total_cells,1):.1%} of data", delta_color="inverse")
+        d2.metric("Infinite Values (±Inf)", f"{inf_count}", delta="Critical" if inf_count > 0 else "Clean", delta_color="inverse")
         d3.metric("Duplicate Rows", f"{duplicate_count}", delta="Redundant" if duplicate_count > 0 else "Unique", delta_color="inverse")
-        d4.metric("Non-Numeric Columns", f"{len(non_numeric_cols)}", delta="Requires Encoding" if len(non_numeric_cols) > 0 else "Pure Numeric", delta_color="off")
+        d4.metric("Constant / Dead Columns", f"{len(constant_cols)}", delta="Zero Info" if len(constant_cols) > 0 else "Active", delta_color="inverse")
 
-        with st.expander("📋 View Raw Data Head & Column Types"):
-            st.dataframe(raw_df.head(10), use_container_width=True)
-            st.write(pd.DataFrame({"Data Type": col_types, "Missing Values": raw_df.isna().sum()}))
+        if len(constant_cols) > 0:
+            st.warning(f"⚠️ Zero-variance columns detected: `{constant_cols}`. These contribute no learning signal and should be dropped.")
+        if len(high_card_cols) > 0:
+            st.info(f"💡 Potential ID / Hash / Free-text columns detected: `{high_card_cols}`.")
+
+        with st.expander("📋 View Raw vs. Web-Parsed Data Types"):
+            col_audit = pd.DataFrame({
+                "Original Type": raw_df.dtypes.astype(str),
+                "Parsed Type": clean_pass_df.dtypes.astype(str),
+                "Missing Values": clean_pass_df.isna().sum(),
+                "Unique Values": clean_pass_df.nunique()
+            })
+            st.dataframe(col_audit, use_container_width=True)
 
         st.divider()
 
+        # --- SANITIZATION PIPELINE CONFIGURATION ---
         st.subheader("⚙️ Sanitization Pipeline Configuration")
-        
-        c_opt1, c_opt2 = st.columns(2)
-        with c_opt1:
-            impute_strategy = st.selectbox(
-                "Missing Value Strategy",
-                ["Median (Robust to Outliers)", "Mean (Parametric)", "Drop Rows with Missing Values", "Constant Fill (0.0)"]
-            )
-            handle_inf = st.checkbox("Sanitize Infinite Values (`±inf` → `NaN` → Imputed)", value=True)
-            drop_dups = st.checkbox("Remove Duplicate Rows", value=True)
 
-        with c_opt2:
+        p_col1, p_col2 = st.columns(2)
+        with p_col1:
+            impute_strategy = st.selectbox(
+                "1. Missing Value Strategy",
+                ["Median Imputation (Robust to Outliers)", "Mean Imputation (Parametric)", "Drop Rows with Missing Values", "Constant Zero Fill (0.0)"]
+            )
+            cat_encoding = st.selectbox(
+                "2. Categorical Variable Treatment",
+                ["One-Hot Encoding (Max 15 levels per col)", "Ordinal / Label Encoding", "Frequency Encoding (% of Total)", "Drop All Non-Numeric Columns"]
+            )
+            drop_dups = st.checkbox("Remove Duplicate Rows", value=True)
+            drop_dead = st.checkbox("Auto-Drop Zero-Variance (Constant) Columns", value=True)
+
+        with p_col2:
             outlier_handling = st.selectbox(
-                "Extreme Outlier Handling",
-                ["None (Keep All)", "Clip Outliers (Winsorize at 1st / 99th Percentile)", "Drop Rows with Z-score > 3.5"]
+                "3. Extreme Outlier & Heavy Tail Treatment",
+                ["None (Keep Natural Variance)", "Winsorization (Clip at 1st / 99th Percentile)", "Z-score Filtering (Drop Rows > 3.5σ)", "Log1p Transformation (Handle Skewness)"]
             )
             scale_method = st.selectbox(
-                "Feature Scaling Method for ML",
-                ["Standard Scaler (Zero Mean, Unit Variance)", "MinMax Scaler (Range [0, 1])", "None (Raw Values)"]
+                "4. Feature Scaling Method for ML",
+                ["Standard Scaler (Zero Mean, Unit Variance)", "MinMax Scaler (Range [0, 1])", "Robust Scaler (Median & IQR)", "None (Unscaled Clean Matrix)"]
             )
+            handle_inf = st.checkbox("Sanitize Infinite Values (±inf → NaN → Imputed)", value=True)
 
-        if st.button("🚀 Run Sanitization & Generate ML-Ready Dataset", type="primary"):
-            cleaned = raw_df.copy()
+        if st.button("🚀 Run Comprehensive Sanitization & Generate ML-Ready Dataset", type="primary"):
+            cleaned = clean_pass_df.copy()
 
+            # Step 1: Remove duplicates
             if drop_dups:
                 cleaned = cleaned.drop_duplicates()
 
-            if handle_inf:
-                num_cols_sel = cleaned.select_dtypes(include=np.number).columns
-                cleaned[num_cols_sel] = cleaned[num_cols_sel].replace([np.inf, -np.inf], np.nan)
+            # Step 2: Auto-drop constant columns
+            if drop_dead and len(constant_cols) > 0:
+                cleaned = cleaned.drop(columns=constant_cols)
 
-            for col in cleaned.columns:
-                if cleaned[col].dtype == object or cleaned[col].dtype.name == 'category':
+            # Step 3: Sanitize infinities
+            if handle_inf:
+                num_c = cleaned.select_dtypes(include=np.number).columns
+                cleaned[num_c] = cleaned[num_c].replace([np.inf, -np.inf], np.nan)
+
+            # Step 4: Categorical Treatment
+            text_cols = cleaned.select_dtypes(exclude=np.number).columns
+            if "Drop All" in cat_encoding:
+                cleaned = cleaned.drop(columns=text_cols)
+            elif "One-Hot" in cat_encoding:
+                # One-hot encode only low/medium cardinality columns
+                cols_to_encode = [c for c in text_cols if cleaned[c].nunique() <= 15]
+                cleaned = pd.get_dummies(cleaned, columns=cols_to_encode, drop_first=True, dtype=float)
+                # Any leftover high cardinality string cols are label-encoded
+                remaining_text = cleaned.select_dtypes(exclude=np.number).columns
+                for col in remaining_text:
+                    cleaned[col] = cleaned[col].astype(str).factorize()[0]
+            elif "Frequency" in cat_encoding:
+                for col in text_cols:
+                    freq_map = cleaned[col].value_counts(normalize=True).to_dict()
+                    cleaned[col] = cleaned[col].map(freq_map).fillna(0.0)
+            elif "Ordinal" in cat_encoding:
+                for col in text_cols:
                     cleaned[col] = cleaned[col].astype(str).factorize()[0]
 
+            # Step 5: Missing Value Imputation
             num_cols = cleaned.select_dtypes(include=np.number).columns
             for col in num_cols:
                 if cleaned[col].isna().any():
@@ -289,18 +374,25 @@ def render_data_sanitizer_lab():
             if "Drop Rows" in impute_strategy:
                 cleaned = cleaned.dropna()
 
-            if "Clip" in outlier_handling:
+            # Step 6: Outliers / Skewness Treatment
+            if "Winsorization" in outlier_handling:
                 for col in num_cols:
                     p1, p99 = np.percentile(cleaned[col].dropna(), [1, 99])
                     cleaned[col] = np.clip(cleaned[col], p1, p99)
-            elif "Drop" in outlier_handling:
+            elif "Z-score" in outlier_handling:
                 for col in num_cols:
                     mean_val = cleaned[col].mean()
                     std_val = cleaned[col].std()
                     if std_val > 0:
                         z_scores = np.abs((cleaned[col] - mean_val) / std_val)
                         cleaned = cleaned[cleaned[col].isna() | (z_scores <= 3.5)]
+            elif "Log1p" in outlier_handling:
+                for col in num_cols:
+                    # Apply log1p safely only if data is non-negative
+                    if (cleaned[col] >= 0).all():
+                        cleaned[col] = np.log1p(cleaned[col])
 
+            # Step 7: Feature Scaling
             X_clean_mat = cleaned.select_dtypes(include=np.number).to_numpy(dtype=float)
             X_clean_mat = np.nan_to_num(X_clean_mat, nan=0.0, posinf=0.0, neginf=0.0)
 
@@ -315,25 +407,32 @@ def render_data_sanitizer_lab():
                 ptp_v = max_v - min_v
                 ptp_v[ptp_v == 0] = 1.0
                 X_clean_mat = (X_clean_mat - min_v) / ptp_v
+            elif "Robust" in scale_method:
+                median_v = np.median(X_clean_mat, axis=0)
+                q75, q25 = np.percentile(X_clean_mat, [75, 25], axis=0)
+                iqr = q75 - q25
+                iqr[(iqr == 0) | np.isnan(iqr)] = 1.0
+                X_clean_mat = (X_clean_mat - median_v) / iqr
 
             final_clean_df = pd.DataFrame(X_clean_mat, columns=cleaned.select_dtypes(include=np.number).columns)
 
-            st.success("✨ Data Sanitization Complete! Your dataset is 100% finite, imputed, scaled, and ready for ML ingestion.")
+            st.success("✨ Data Sanitization Complete! Your dataset is now 100% numeric, finite, imputed, and ML-ready.")
 
-            rc1, rc2 = st.columns(2)
-            rc1.metric("Original Dataset Shape", f"{raw_df.shape[0]} rows × {raw_df.shape[1]} cols")
-            rc2.metric("Sanitized ML-Ready Shape", f"{final_clean_df.shape[0]} rows × {final_clean_df.shape[1]} cols", delta=f"-{raw_df.shape[0]-final_clean_df.shape[0]} rows dropped")
+            # Audit summary cards
+            rc1, rc2, rc3 = st.columns(3)
+            rc1.metric("Original Dimensions", f"{raw_df.shape[0]} × {raw_df.shape[1]}")
+            rc2.metric("Sanitized Dimensions", f"{final_clean_df.shape[0]} × {final_clean_df.shape[1]}")
+            rc3.metric("Defects Resolved", f"{missing_count + inf_count + duplicate_count} flaws")
 
             st.subheader("✨ Sanitized Data Preview (First 10 Rows)")
             st.dataframe(final_clean_df.head(10), use_container_width=True)
 
             st.download_button(
-                "📥 Download ML-Ready Sanitized Dataset (.csv)",
+                "📥 Download Clean ML-Ready CSV",
                 final_clean_df.to_csv(index=False),
                 "ml_ready_sanitized_dataset.csv",
                 "text/csv"
             )
-
 
 # ==========================================
 # STREAMLIT PAGE SETUP
